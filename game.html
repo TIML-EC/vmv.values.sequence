@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VMV2027 Game</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+
+        #app {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Opening Section */
+        #opening {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        #title-section {
+            height: 16.666vh; /* 1/6 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 5rem;
+            font-weight: bold;
+        }
+
+        #sphere-section {
+            height: 66.666vh; /* 4/6 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            perspective: 1000px;
+            overflow: hidden;
+        }
+
+        #hint-section {
+            height: 16.666vh; /* 1/6 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2rem;
+        }
+
+        .blink {
+            animation: blinker 1s linear infinite;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        #sphere-container {
+            width: 400px;
+            height: 400px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.1s linear;
+        }
+
+        .sphere-char {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            font-size: 28px;
+            color: #fff;
+            transform-origin: center center;
+            white-space: nowrap;
+            user-select: none;
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+        }
+
+        /* Game Section */
+        #game {
+            display: none;
+            width: 100%;
+            height: 100%;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #333;
+        }
+
+        #game-board {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .square {
+            width: 360px;
+            height: 360px;
+            background-color: #fff;
+            border-radius: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            transition: transform 0.5s ease-in-out, left 0.5s ease-in-out;
+        }
+
+        .square img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .vibrate {
+            animation: vibrate 0.1s linear infinite;
+        }
+
+        @keyframes vibrate {
+            0% { transform: translate(0, 0); }
+            25% { transform: translate(-2px, 2px); }
+            50% { transform: translate(2px, -2px); }
+            75% { transform: translate(-2px, -2px); }
+            100% { transform: translate(2px, 2px); }
+        }
+
+        /* Ending Section */
+        #ending {
+            display: none;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+        }
+
+        #ending video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <!-- Opening -->
+    <div id="opening">
+        <div id="title-section">VMV2027</div>
+        <div id="sphere-section">
+            <div id="sphere-container"></div>
+        </div>
+        <div id="hint-section">
+            <div class="blink">按任意鍵開始</div>
+        </div>
+    </div>
+
+    <!-- Game -->
+    <div id="game">
+        <div id="game-board"></div>
+    </div>
+
+    <!-- Ending -->
+    <div id="ending">
+        <video id="win-video" src="winning.mp4" loop></video>
+    </div>
+</div>
+
+<audio id="bgm" loop>
+    <source src="sound/bgm/bgm.mp3" type="audio/mpeg">
+</audio>
+<audio id="swap-sound">
+    <source src="sound/soundeffect/swap.mp3" type="audio/mpeg">
+</audio>
+<audio id="stage-sound"></audio>
+<audio id="win-sound">
+    <source src="sound/soundeffect/win1.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+    const app = {
+        state: 'opening',
+        bgm: document.getElementById('bgm'),
+        swapSound: document.getElementById('swap-sound'),
+        stageSound: document.getElementById('stage-sound'),
+        winSound: document.getElementById('win-sound'),
+        winVideo: document.getElementById('win-video'),
+        
+        // Sphere settings
+        sphereChars: "以客為尊創新與科技卓越服務團隊精神精益求精",
+        sphereContainer: document.getElementById('sphere-container'),
+        
+        // Game settings
+        groups: [
+            { id: 'val1', images: ['11', '12', '13', '14'], correct: ['11', '12', '13', '14'] },
+            { id: 'val2', images: ['21', '22', '23', '24', '25'], correct: ['21', '22', '23', '24', '25'] },
+            { id: 'val3', images: ['31', '32', '33', '34'], correct: ['31', '32', '33', '34'] },
+            { id: 'val4', images: ['41', '42', '43', '44'], correct: ['41', '42', '43', '44'] },
+            { id: 'val5', images: ['51', '52', '53', '54'], correct: [['51', '52', '53', '54'], ['54', '52', '53', '51']] }
+        ],
+        stages: [],
+        currentStageIndex: 0,
+        selectedSquare: null,
+        currentStageData: null,
+        isTransitioning: false,
+        animationFrameId: null,
+
+        init() {
+            this.createSphere();
+            window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        },
+
+        createSphere() {
+            const radius = 220;
+            const text = this.sphereChars;
+            const charCount = 80; // Total characters to fill the sphere
+            
+            this.sphereContainer.innerHTML = ''; // Clear for reset
+            
+            for (let i = 0; i < charCount; i++) {
+                const char = text[i % text.length];
+                const span = document.createElement('span');
+                span.className = 'sphere-char';
+                span.innerText = char;
+                
+                // Fibonacci sphere distribution
+                const phi = Math.acos(-1 + (2 * i) / charCount);
+                const theta = Math.sqrt(charCount * Math.PI) * phi;
+                
+                const x = radius * Math.cos(theta) * Math.sin(phi);
+                const y = radius * Math.sin(theta) * Math.sin(phi);
+                const z = radius * Math.cos(phi);
+                
+                span.dataset.x = x;
+                span.dataset.y = y;
+                span.dataset.z = z;
+                
+                this.sphereContainer.appendChild(span);
+            }
+            
+            this.animateSphere();
+        },
+
+        animateSphere() {
+            let angleY = 0;
+            const animate = () => {
+                if (this.state !== 'opening') {
+                    cancelAnimationFrame(this.animationFrameId);
+                    return;
+                }
+                
+                angleY += 0.005; // Slower rotation
+                const cosY = Math.cos(angleY);
+                const sinY = Math.sin(angleY);
+                
+                const spans = document.querySelectorAll('.sphere-char');
+                spans.forEach(span => {
+                    const x = parseFloat(span.dataset.x);
+                    const z = parseFloat(span.dataset.z);
+                    const y = parseFloat(span.dataset.y);
+                    
+                    // Rotate around Y axis
+                    const rx = x * cosY - z * sinY;
+                    const rz = x * sinY + z * cosY;
+                    
+                    // Apply transform: translate to (rx, y, rz)
+                    // No rotation on the character itself so it keeps facing forward
+                    span.style.transform = `translate3d(${rx}px, ${y}px, ${rz}px)`;
+                    
+                    // Opacity based on depth
+                    const opacity = (rz + 220) / 440 * 0.7 + 0.3;
+                    span.style.opacity = opacity;
+                    span.style.zIndex = Math.round(rz + 220);
+                    
+                    // Scaling slightly to enhance 3D effect
+                    const scale = (rz + 220) / 440 * 0.5 + 0.5;
+                    span.style.fontSize = `${28 * scale}px`;
+                });
+                this.animationFrameId = requestAnimationFrame(animate);
+            };
+            animate();
+        },
+
+        handleKeyDown(e) {
+            if (this.state === 'opening') {
+                this.startGame();
+            } else if (this.state === 'gaming') {
+                const key = e.key;
+                if (['1', '2', '3', '4', '5'].includes(key)) {
+                    this.handleSquareSelect(parseInt(key));
+                }
+            } else if (this.state === 'ending') {
+                if (e.code === 'Space') {
+                    this.resetToOpening();
+                }
+            }
+        },
+
+        startGame() {
+            this.state = 'gaming';
+            document.getElementById('opening').style.display = 'none';
+            document.getElementById('game').style.display = 'flex';
+            this.bgm.play().catch(e => console.log("BGM autoplay prevented, needs user interaction"));
+            
+            // Randomize stage order
+            this.stages = [...this.groups].sort(() => Math.random() - 0.5);
+            this.currentStageIndex = 0;
+            this.loadStage();
+        },
+
+        loadStage() {
+            const stage = this.stages[this.currentStageIndex];
+            this.currentStageData = stage;
+            const board = document.getElementById('game-board');
+            board.innerHTML = '';
+            
+            // Randomize images but not correct
+            let displayImages;
+            do {
+                displayImages = [...stage.images].sort(() => Math.random() - 0.5);
+            } while (this.isCorrectOrder(displayImages, stage.correct));
+
+            displayImages.forEach((imgName, index) => {
+                const sq = document.createElement('div');
+                sq.className = 'square';
+                sq.id = `sq${index + 1}`;
+                sq.dataset.img = imgName;
+                
+                const img = document.createElement('img');
+                img.src = `svg/${imgName}.svg`;
+                sq.appendChild(img);
+                
+                board.appendChild(sq);
+            });
+            
+            this.selectedSquare = null;
+            this.isTransitioning = false;
+        },
+
+        isCorrectOrder(current, correct) {
+            if (Array.isArray(correct[0])) {
+                // For val5 multiple correct orders
+                return correct.some(order => JSON.stringify(current) === JSON.stringify(order));
+            }
+            return JSON.stringify(current) === JSON.stringify(correct);
+        },
+
+        handleSquareSelect(num) {
+            if (this.isTransitioning) return;
+            
+            const squares = document.querySelectorAll('.square');
+            if (num > squares.length) return;
+            
+            const target = document.getElementById(`sq${num}`);
+            
+            if (this.selectedSquare === null) {
+                this.selectedSquare = num;
+                target.classList.add('vibrate');
+            } else if (this.selectedSquare === num) {
+                // Deselect
+                target.classList.remove('vibrate');
+                this.selectedSquare = null;
+            } else {
+                // Swap
+                this.swapSquares(this.selectedSquare, num);
+            }
+        },
+
+        async swapSquares(idx1, idx2) {
+            this.isTransitioning = true;
+            this.swapSound.currentTime = 0;
+            this.swapSound.play();
+            
+            const sq1 = document.getElementById(`sq${idx1}`);
+            const sq2 = document.getElementById(`sq${idx2}`);
+            
+            sq1.classList.remove('vibrate');
+            
+            // Calculate positions for swap animation
+            const rect1 = sq1.getBoundingClientRect();
+            const rect2 = sq2.getBoundingClientRect();
+            const diffX = rect2.left - rect1.left;
+            
+            // Animation
+            sq1.style.transition = 'transform 0.5s ease-in-out';
+            sq2.style.transition = 'transform 0.5s ease-in-out';
+            sq1.style.transform = `translateX(${diffX}px)`;
+            sq2.style.transform = `translateX(${-diffX}px)`;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Reset transforms and swap DOM elements
+            sq1.style.transition = 'none';
+            sq2.style.transition = 'none';
+            sq1.style.transform = '';
+            sq2.style.transform = '';
+            
+            // Swap contents and data instead of elements to keep IDs and positions stable
+            const tempImg = sq1.innerHTML;
+            const tempImgData = sq1.dataset.img;
+            
+            sq1.innerHTML = sq2.innerHTML;
+            sq1.dataset.img = sq2.dataset.img;
+            
+            sq2.innerHTML = tempImg;
+            sq2.dataset.img = tempImgData;
+            
+            this.selectedSquare = null;
+            this.isTransitioning = false;
+            
+            this.checkStageComplete();
+        },
+
+        checkStageComplete() {
+            const currentOrder = Array.from(document.querySelectorAll('.square')).map(sq => sq.dataset.img);
+            if (this.isCorrectOrder(currentOrder, this.currentStageData.correct)) {
+                this.completeStage();
+            }
+        },
+
+        completeStage() {
+            this.isTransitioning = true;
+            const stageId = this.currentStageData.id;
+            this.stageSound.src = `sound/soundeffect/${stageId}.mp3`;
+            this.stageSound.play();
+            
+            this.stageSound.onended = () => {
+                setTimeout(() => {
+                    this.currentStageIndex++;
+                    if (this.currentStageIndex < this.stages.length) {
+                        this.loadStage();
+                    } else {
+                        this.showEnding();
+                    }
+                }, 1000);
+            };
+        },
+
+        showEnding() {
+            this.state = 'ending';
+            this.bgm.pause();
+            this.bgm.currentTime = 0;
+            this.winVideo.play();
+            
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('ending').style.display = 'flex';
+        },
+
+        resetToOpening() {
+            this.state = 'opening';
+            this.winVideo.pause();
+            this.winVideo.currentTime = 0;
+            
+            document.getElementById('ending').style.display = 'none';
+            document.getElementById('opening').style.display = 'flex';
+            
+            // Clear game board
+            document.getElementById('game-board').innerHTML = '';
+            
+            // Restart sphere
+            this.createSphere();
+        }
+    };
+
+    window.onload = () => app.init();
+
+</script>
+</body>
+</html>
